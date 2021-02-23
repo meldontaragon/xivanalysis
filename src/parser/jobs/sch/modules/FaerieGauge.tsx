@@ -8,7 +8,6 @@ import STATUSES from 'data/STATUSES'
 import {CastEvent, HealEvent} from 'fflogs'
 import {dependency} from 'parser/core/Module'
 import Combatants from 'parser/core/modules/Combatants'
-import Cooldowns from 'parser/core/modules/Cooldowns'
 import {CounterGauge, Gauge as CoreGauge} from 'parser/core/modules/Gauge'
 import Suggestions, {SEVERITY, TieredSuggestion} from 'parser/core/modules/Suggestions'
 import React from 'react'
@@ -57,52 +56,45 @@ export class FaerieGauge extends CoreGauge {
 
 	protected init() {
 		super.init()
+		// this.findFaerie()
 
 		this.addEventHook(
 			['cast', 'heal'],
 			{by: ['player', 'pet'], abilityId: Array.from(FAERIE_MODIFIERS.keys())},
 			this.onGaugeModifier,
 		)
+		this.addEventHook(
+			'death',
+			{to: 'player'},
+			this._onDeath,
+		)
 		this.addEventHook('complete', this.onComplete)
 		this.addEventHook(
 			'cast',
 			{by: 'player', abilityId: SUMMON_ACTIONS},
-			this.onSummon,
+			this._onSummon,
 		)
 	}
 
-	// Search through the events to figure out if there was a fairy out before logs started
-	normalise(events) {
-		for (const event of events) {
-			if (!event.ability) { continue }
-
-			const action = getDataBy(ACTIONS, 'id', event.ability.guid)
-			if (!action) { continue }
-
-			const pet = this.parser.report.friendlyPets.find(pet => pet.id === event.sourceID)
-				|| {petOwner: -1}
-
-			// Ignore events that aren't related to your fairy
-			if (
-				event.type !== 'cast' ||
-				!event.sourceIsFriendly ||
-				pet.petOwner !== this.parser.player.id ||
-				!action.pet
-			) { continue }
-
-			// Fairy found
-			this._fairyOut = true
-			break
+	// TODO how to check whether the pet is active at the start of the fight
+	private findFaerie() {
+		for (const pet of this.parser.report.friendlyPets) {
+			if (pet.petOwner === this.parser.player.id) {
+				this._fairyOut = true
+				return true
+			}
 		}
-
-		return events
 	}
 
-	onSummon() {
+	private _onSummon() {
 		this._fairyOut = true
 	}
 
-	onGaugeModifier(event: CastEvent | HealEvent) {
+	private _onDeath() {
+		this._fairyOut = false
+	}
+
+	private onGaugeModifier(event: CastEvent | HealEvent) {
 		const modifiers = FAERIE_MODIFIERS.get(event.ability.guid) || {}
 
 		let amount = modifiers[event.type] || 0
@@ -112,10 +104,6 @@ export class FaerieGauge extends CoreGauge {
 			amount = 0
 		}
 		this.faerieGauge.modify(amount)
-	}
-
-	_onDeath() {
-		this._fairyOut = false
 	}
 
 	private onComplete() {
